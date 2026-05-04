@@ -1,0 +1,490 @@
+---
+title: Language stack
+description: Por qué Java y Kotlin tienen tanto sentido para una plataforma moddable
+---
+
+# Language stack
+
+Ya tenemos más o menos clara la arquitectura que queremos usar.  
+Ahora toca hablar de una parte que parece más aburrida de lo que realmente es: **el lenguaje**.
+
+Y digo que parece aburrida porque mucha gente lo resume en:
+
+> “usa Rust porque es rápido”  
+> “usa Java porque Minecraft ya lo usa”  
+> “usa C++ porque es lo que usan los motores serios”
+
+Pero para una plataforma moddable la pregunta no es solo:
+
+> ¿qué lenguaje corre más rápido?
+
+La pregunta buena es:
+
+> ¿qué lenguaje hace más fácil que otra gente construya encima?
+
+Porque al final una plataforma de mods o plugins no vive solo del core. Vive de la gente que hace plugins raros, minijuegos, sistemas de economía, APIs, librerías, herramientas, loaders, bridges, forks y mil cosas más que ni tú habías pensado cuando diseñaste el servidor.
+
+Así que el lenguaje importa, pero no solo por rendimiento. Importa porque define:
+
+- cómo se distribuyen los plugins;
+- qué tan fácil es hacer un plugin;
+- qué tan fácil es debuggear;
+- qué tooling existe;
+- qué comunidad puedes atraer;
+- qué tan portable es todo;
+- y cuánto dolor le estás metiendo al dev promedio.
+
+Vamos a mirar algunos enfoques y luego aterrizamos por qué Java/Kotlin siguen teniendo muchísimo sentido para algo estilo Minecraft/Hytale.
+
+## Pumpkin: Rust suena muy bien, y de hecho lo es
+
+Un ejemplo interesante es [Pumpkin](https://pumpkinmc.org/), un servidor de Minecraft escrito en Rust.
+
+La idea es bastante atractiva: un servidor moderno, rápido, eficiente y con una base más cercana a software de bajo nivel. En su web, Pumpkin se vende claramente alrededor de rendimiento, bajo consumo y una experiencia más ligera que los servidores tradicionales.
+
+También existe [Pumpkin Hub](https://pumpkinhub.org/), que se presenta como un registry/comunidad para plugins de Pumpkin. La idea es buena: tener un sitio donde descubrir, verificar y distribuir plugins para este ecosistema.
+
+Referencias:
+- [Pumpkin](https://pumpkinmc.org/)
+- [Pumpkin Hub](https://pumpkinhub.org/)
+- [Pumpkin for developers](https://pumpkinmc.org/developers/)
+- [Pumpkin Rust plugin development](https://docs.pumpkinmc.org/plugin-dev/rust/creating-project)
+- [Pumpkin plugin basic logic](https://docs.pumpkinmc.org/plugin-dev/rust/basic-logic)
+
+Hasta ahí, todo bien.  
+De hecho, para cierto tipo de servidor, Rust es una opción muy buena.
+
+El punto donde hay que ir con cuidado es este:
+
+> un servidor con plugins no es automáticamente una plataforma grande.
+
+Puede sonar a detalle, pero no lo es.
+
+Un servidor se vuelve plataforma cuando hacer plugins es fácil, barato, portable y cómodo para mucha gente distinta. No solo para devs muy metidos en sistemas, Rust, WASM, FFI o toolchains concretas.
+
+## El modelo de plugins con WebAssembly
+
+Pumpkin usa un sistema de plugins compilados a WebAssembly/WASI. Por ejemplo, su documentación de Rust indica que hay que instalar el target `wasm32-wasip2`:
+
+```bash
+rustup target add wasm32-wasip2
+```
+
+La idea tiene sentido. WebAssembly te da una frontera más limpia que cargar librerías nativas directamente. También permite que, en teoría, distintos lenguajes puedan compilar hacia el mismo formato.
+
+Eso está muy bien.
+
+Pero no es gratis.
+
+Con WASM normalmente tienes una frontera entre el host y el plugin. Esa frontera hay que diseñarla, mantenerla y documentarla. Tienes que pensar cómo pasan los datos, cómo se exponen eventos, comandos, permisos, entidades, mundos, inventarios, errores, logs y demás.
+
+En una app pequeña o en un sistema muy controlado, eso puede ir perfecto.  
+En una plataforma enorme, donde quieres miles de plugins y muchos devs con niveles distintos, puede empezar a sentirse más pesado.
+
+No estoy diciendo que WASM sea malo.  
+Estoy diciendo que no es mágicamente equivalente a:
+
+> “toma un `.jar`, mételo en la carpeta de plugins y arranca el server”.
+
+Ese modelo de la JVM lleva años funcionando en Minecraft precisamente porque es muy cómodo para terceros.
+
+## PatchBukkit: cuando necesitas un puente
+
+Otro caso interesante es [PatchBukkit](https://github.com/Pumpkin-MC/PatchBukkit).
+
+PatchBukkit intenta que plugins de Bukkit, Spigot y Paper puedan correr sobre Pumpkin. Y eso ya nos dice algo importante: el ecosistema Bukkit/Paper sigue siendo tan grande que incluso un servidor nuevo en Rust necesita de este para ser adoptado.
+
+La propia documentación de PatchBukkit explica que el sistema se divide entre:
+
+- una librería dinámica en Rust;
+- una librería Java que reimplementa parte de la API Bukkit;
+- una JVM embebida;
+- comunicación mediante JNI;
+- y un puente FFI basado en Protocol Buffers.
+
+Referencia:
+- [PatchBukkit architecture](https://github.com/Pumpkin-MC/PatchBukkit/blob/master/ARCHITECTURE.md)
+
+Teoricamente es perfecto, arreglamos todos los problemas y con un mejor rendimiento al usar rust. ¿Verdad? Pero hay un problema.
+
+Cuando tu runtime principal no es el mismo que el runtime del ecosistema que quieres aprovechar, empiezas a necesitar puentes. Y los puentes suelen traer cosas raras:
+
+- más piezas que mantener;
+- más sitios donde algo puede romperse;
+- más coste al mover datos;
+- más dificultad al debuggear;
+- diferencias entre “la API real” y “la API reimplementada”;
+- y límites cuando un plugin toca partes internas o comportamientos muy concretos. (Muchos plugins dependen de NMS para optimizar cosas o acceder a funcionalidades no expuestas oficialmente).
+
+No es que PatchBukkit sea mala idea. Al contrario, es una idea muy útil.  
+Pero existe porque hay una distancia natural entre Pumpkin/Rust y el ecosistema Bukkit/Paper/JVM.
+
+Esa distancia no desaparece por arte de magia.
+
+## Go y los plugins nativos: también tiene trampa
+
+Podríamos decir:
+
+> “ok, papu, no usemos Rust; usemos Go y cargemos plugins dinámicos”.
+
+Go tiene un paquete oficial llamado [`plugin`](https://pkg.go.dev/plugin), y puedes compilar algo así:
+
+```bash
+go build -buildmode=plugin
+```
+
+Luego el programa principal puede cargarlo en runtime.
+
+Suena bien, pero la propia documentación de Go avisa de bastantes problemas:
+
+- los plugins solo están soportados en Linux, FreeBSD y macOS;
+- no son buena opción si quieres máxima portabilidad;
+- el race detector no los soporta bien;
+- la inicialización del programa se vuelve más difícil de razonar;
+- cargar librerías no confiables puede ser peligroso;
+- y puedes tener crashes si el host y los plugins no fueron compilados con la misma versión exacta del toolchain, flags, build tags y dependencias.
+
+Referencia:
+- [Go plugin package](https://pkg.go.dev/plugin)
+- [Mi propio servidor en go usando este sistema](https://www.youtube.com/watch?v=6Yrv7VQX7Ow)
+
+O sea, sí, puedes hacerlo.  
+Pero para una plataforma moddable grande, donde terceros van a compilar y distribuir cosas por su cuenta, esto se complica rápido.
+
+Un plugin por sistema operativo.  
+Un plugin por versión.  
+Un plugin que quizá rompe porque cambiaste flags de compilación.
+
+No es imposible, pero no es el tipo de experiencia que quieres si tu objetivo es que mucha gente cree contenido sin pelearse con el sistema.
+
+## Rust y Go no son malas opciones
+
+Esto es importante: no estoy diciendo que Rust o Go sean malos.
+
+Rust puede ser espectacular para:
+
+- servidores pequeños y muy optimizados;
+- proxies;
+- limbos;
+- auth servers;
+- servicios auxiliares;
+- servidores vanilla-focused;
+- herramientas internas;
+- sistemas donde hay pocas extensiones;
+- o proyectos donde el equipo que hace plugins también controla el core.
+
+Ahí Rust brilla muchísimo.
+
+Go también puede funcionar muy bien para tooling, infraestructura, servicios externos, paneles, workers, APIs o sistemas donde quieres binarios simples y despliegues cómodos.
+
+El problema aparece cuando quieres montar una plataforma moddable enorme.
+
+Ahí el cuello de botella no es solo:
+
+> “cuántos ticks aguanta el server”.
+
+También es:
+
+> “cuánta gente puede extender esto sin sufrir”.
+
+Y esa segunda pregunta cambia bastante la discusión.
+
+## La JVM: no solo Java, sino una plataforma
+
+Aquí entra Java.
+
+Mucha gente ve Java como “el lenguaje viejo que usa Minecraft”, pero eso es quedarse corto. Lo potente de Java en este contexto no es solo Java como sintaxis. Lo potente es la JVM.
+
+La [Java Virtual Machine Specification](https://docs.oracle.com/javase/specs/jvms/se21/html/) deja claro que la JVM trabaja con el formato `class`, no solo con el lenguaje Java. Cualquier lenguaje que pueda generar un class file válido puede correr sobre la JVM.
+
+Referencia:
+- [JVM Specification - Introduction](https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-1.html)
+
+Eso significa que puedes tener:
+
+- Java;
+- Kotlin;
+- Scala;
+- Groovy;
+- Clojure;
+- y otros lenguajes JVM;
+
+compartiendo runtime, librerías, tooling y sistema de distribución.
+
+Para una plataforma de plugins, eso es muy fuerte.
+
+Porque no estás eligiendo solamente un lenguaje.  
+Estás eligiendo un ecosistema entero.
+
+## El `.jar` es más importante de lo que parece
+
+Una de las mayores ventajas de la JVM es algo que parece tonto: el `.jar`.
+
+Un JAR es básicamente un archivo que empaqueta clases, recursos y metadata. Puede llevar `MANIFEST.MF`, recursos internos, firmas, dependencias sombreadas, configuraciones y todo lo que un plugin necesita para distribuirse como una unidad.
+
+Referencia:
+- [JAR File Specification](https://docs.oracle.com/en/java/javase/21/docs/specs/jar/jar.html)
+
+Para modding esto es comodísimo.
+
+Un plugin deja de ser:
+
+> “compila esto para Linux, Windows y macOS, con este toolchain exacto”.
+
+Y pasa a ser:
+
+> “aquí tienes un `.jar`; ponlo en la carpeta de plugins”.
+
+Esa diferencia parece pequeña, pero cambia todo.
+
+Porque cuando publicar un plugin es fácil, más gente publica plugins.  
+Cuando instalarlos es fácil, más servidores los prueban.  
+Cuando actualizarlos es fácil, el ecosistema se mueve más rápido.
+
+Y cuando todo eso se vuelve normal, la plataforma crece.
+
+## Kotlin encaja muy bien encima de Java
+
+Ahora, Java está bien, pero tampoco vamos a fingir que su sintaxis es la cosa más cómoda del mundo para todo.
+
+Ahí Kotlin encaja muy bien.
+
+Kotlin fue diseñado con interoperabilidad con Java en mente. Puedes llamar código Java desde Kotlin de forma bastante natural, y también puedes llamar Kotlin desde Java.
+
+Referencias:
+- [Calling Java from Kotlin](https://kotlinlang.org/docs/java-interop.html)
+- [Calling Kotlin from Java](https://kotlinlang.org/docs/java-to-kotlin-interop.html)
+
+Esto tiene mucha gracia para una plataforma grande:
+
+- puedes tener APIs base estables en Java;
+- puedes dejar que plugins modernos usen Kotlin;
+- puedes mezclar librerías Java y Kotlin;
+- puedes mantener compatibilidad con el ecosistema existente;
+- y no obligas a todo el mundo a cambiar de mundo.
+
+Kotlin no rompe Java.  
+Kotlin lo hace más agradable.
+
+Y para muchos devs de plugins, eso es perfecto: siguen en la JVM, pero con una sintaxis más cómoda.
+
+## “Java es lento porque es interpretado” es la típica
+
+Este punto sale siempre:
+
+> “Java es lento porque es interpretado”.
+
+Eso es una simplificación enorme.
+
+La JVM moderna usa JIT, optimizaciones en runtime, profiling, inlining, escape analysis, garbage collectors avanzados y muchas más cosas. No es simplemente “interpreta bytecode y ya”.
+
+Además, incluso la especificación de la JVM habla del class file como un formato independiente de hardware y sistema operativo. Esa portabilidad es justo lo que quieres cuando distribuyes plugins a gente que corre servidores en Windows, Linux, macOS, contenedores, hosting compartido o máquinas rarísimas.
+
+Referencia:
+- [JVM Specification - class file format](https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-1.html)
+
+La conversación real no debería ser:
+
+> Rust compila, Java interpreta.
+
+La conversación real debería ser:
+
+> ¿qué runtime encaja mejor con el producto que queremos construir?
+
+Si estás haciendo un servidor muy optimizado, con pocas extensiones y mucho control interno, Rust puede ser buenísimo.
+
+Si estás haciendo una plataforma donde miles de personas van a meter plugins, tocar APIs, hacer librerías, publicar builds y mantener proyectos durante años, la JVM tiene una ventaja enorme.
+
+No porque sea perfecta.  
+Sino porque ya resolvió mucha parte aburrida del problema.
+
+## Roblox: otro modelo válido
+
+Roblox es un buen contraejemplo porque no usa el modelo JVM.
+
+Roblox separa el engine de la capa de scripting. Los creadores escriben en [Luau](https://luau.org/), que es un lenguaje derivado de Lua, pequeño, rápido, embebible y con tipado gradual.
+
+Referencias:
+- [Luau official site](https://luau.org/)
+- [Roblox Luau docs](https://create.roblox.com/docs/luau)
+- [Luau getting started](https://luau.org/getting-started/)
+
+Este modelo tiene bastante sentido:
+
+- el engine puede estar muy optimizado;
+- los creadores no cargan código nativo directamente;
+- el lenguaje está pensado para scripting;
+- la plataforma controla el editor, runtime y API;
+- y la experiencia para usuarios no técnicos puede ser más suave.
+
+En ese contexto, Luau tiene mucho sentido.
+
+Pero hay una diferencia importante: Roblox controla casi todo el stack.
+
+Controla el editor.  
+Controla el runtime.  
+Controla el lenguaje.  
+Controla la API.  
+Controla cómo se publica contenido.  
+Controla cómo se ejecuta.
+
+Ese modelo funciona muy bien cuando la plataforma está muy cerrada e integrada.
+
+Pero si quieres hablarle a una comunidad que ya viene de Minecraft, Bukkit, Spigot, Paper, Velocity, Forge, Fabric y años de Java, cambiar a un lenguaje de scripting totalmente separado puede sentirse como empezar desde cero.
+
+No es imposible.  
+Pero no es gratis.
+
+## Hytale y el peso de la comunidad Minecraft
+
+Hytale es un caso especial porque siempre ha estado muy conectado culturalmente con Minecraft y con la comunidad de servidores.
+
+El post clásico de Hytale sobre tecnología de servidores decía que el cliente estaba escrito en C# y los servidores corrían en Java. Ojo: ese post hoy aparece marcado como desactualizado por la propia web de Hytale, así que hay que leerlo como referencia histórica, no como estado final absoluto.
+
+Referencias:
+- [An overview of Hytale’s server technology](https://hytale.com/news/2019/1/an-overview-of-hytales-server-technology)
+- [Hytale Modding Strategy and Status](https://hytale.com/news/2025/11/hytale-modding-strategy-and-status)
+
+Lo interesante es que la idea de fondo sigue siendo muy clara: Hytale quiere que el modding sea una parte central, especialmente desde el lado del servidor. En su post de estrategia de modding, hablan de un enfoque server-side first, de evitar que cada servidor necesite un cliente modificado distinto y de proteger a jugadores frente a ciertos riesgos de seguridad.
+
+Eso encaja bastante con lo que estamos hablando.
+
+Para una plataforma así, Java/Kotlin tienen una ventaja natural: mucha gente que viene de Minecraft ya entiende este mundo.
+
+No tienes que enseñar desde cero qué es:
+
+- Gradle;
+- Maven;
+- un `.jar`;
+- un plugin;
+- una API de eventos;
+- un listener;
+- un command executor;
+- un scheduler;
+- un classpath;
+- una dependencia;
+- o una librería compartida.
+
+Gran parte de la comunidad ya tiene ese chip.
+
+## El ecosistema Minecraft ya vive en la JVM
+
+Mira Paper, Velocity y Spigot.
+
+La documentación de Paper enseña a crear plugins con estructura Java, Gradle/Maven y salida en JAR.
+Velocity directamente recomienda saber Java antes de empezar a crear plugins.
+Y la Javadoc de Spigot/Bukkit dice explícitamente que tener conocimiento práctico de Java es un requisito para desarrollar plugins.
+
+Referencias:
+- [Velocity creating your first plugin](https://docs.papermc.io/velocity/dev/creating-your-first-plugin/)
+- [Paper project setup](https://docs.papermc.io/paper/dev/project-setup/)
+- [Spigot/Bukkit API Javadocs](https://hub.spigotmc.org/javadocs/bukkit/)
+
+Esto no es casualidad.
+
+El ecosistema de servidores Minecraft se construyó durante años alrededor de Java.  
+No solo el servidor original, sino toda la cultura de plugins.
+
+Por eso Java/Kotlin no son simplemente “una opción conservadora”.  
+Son una opción que aprovecha lo que la comunidad ya sabe hacer.
+
+## La diferencia entre servidor rápido y plataforma grande
+
+Aquí está la parte importante.
+
+Puedes construir un servidor muy rápido en Rust.  
+Puedes hacer un sistema elegante con WASM.  
+Puedes montar bridges inteligentes.  
+Puedes hacer un core muy limpio.
+
+Todo eso está genial.
+
+Pero una plataforma grande no gana solo por tener mejor benchmark.
+
+Gana porque la gente puede construir encima sin pedir permiso, sin leer 40 páginas de FFI, sin pelearse con compilaciones nativas y sin tener que entender todo el core.
+
+Una plataforma grande necesita que sea fácil:
+
+- crear un plugin;
+- publicarlo;
+- instalarlo;
+- actualizarlo;
+- debuggearlo;
+- mantenerlo;
+- combinarlo con otros plugins;
+- y migrarlo entre versiones.
+
+Ahí la JVM sigue siendo muy difícil de superar.
+
+## Entonces, ¿Rust no?
+
+Rust sí, pero en el sitio correcto.
+
+Yo usaría Rust para muchas cosas:
+
+- componentes de alto rendimiento;
+- servicios auxiliares;
+- herramientas de red;
+- proxies especializados;
+- sistemas donde el código nativo aporta mucho;
+- partes internas que no necesitan ser extendidas por cualquiera;
+- o piezas donde quieres seguridad de memoria y control fino.
+
+Pero para la capa principal de plugins, donde miles de devs van a trabajar, yo prefiero Java/Kotlin.
+
+No porque Rust sea malo.  
+Sino porque el problema no es solo escribir buen código.
+
+El problema es crear un ecosistema.
+
+Y los ecosistemas se construyen bajando la fricción.
+
+## La apuesta Java/Kotlin
+
+Para una plataforma estilo Minecraft/Hytale, yo lo plantearía así:
+
+- Java para APIs base, contratos estables y compatibilidad máxima.
+- Kotlin para ergonomía, DSLs, plugins modernos y código más agradable.
+- JVM como runtime común.
+- JAR como unidad principal de distribución.
+- Gradle/Maven como tooling estándar.
+- Una API bien documentada y pensada para durar.
+
+Este stack no es el más sexy en un benchmark.  
+Pero sí es muy fuerte cuando preguntas:
+
+> ¿cuánta gente puede construir encima de esto durante años?
+
+Y esa es la pregunta que realmente importa.
+
+## Conclusión
+
+Pumpkin, Rust, WASM y proyectos similares me parecen muy interesantes. Están empujando ideas buenas y probablemente van a traer mejoras reales al mundo de los servidores.
+
+Pero una cosa es hacer un servidor rápido y otra cosa es hacer una plataforma gigante de plugins.
+
+Para servidores pequeños, verticales, muy controlados o vanilla-focused, Rust puede ser una opción brutal.  
+Para una plataforma moddable enorme, donde la gracia está en que miles de personas puedan extenderla, Java/Kotlin siguen teniendo una ventaja muy clara.
+
+No por nostalgia.  
+No porque “Minecraft lo hizo así”.  
+Y tampoco porque Java sea perfecto.
+
+Sino porque la JVM ya tiene justo lo que una plataforma de plugins necesita:
+
+- distribución portable;
+- tooling maduro;
+- comunidad enorme;
+- interoperabilidad;
+- JARs;
+- librerías;
+- IDEs;
+- builds conocidas;
+- debugging decente;
+- y una cultura de plugins que ya existe.
+
+Al final, si el éxito de tu plataforma depende de que otros creen encima, lo importante no es solo que el core sea rápido.
+
+Lo importante es que extenderlo sea fácil.
+
+Y en esa pelea, Java/Kotlin son clave 🚬🗿.
