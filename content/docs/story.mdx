@@ -1,0 +1,76 @@
+---
+title: Story
+description: How Reactor was born. The motivation behind building a hytale-server from scratch.
+---
+
+Hi, I'm ichocomilk. I was born on 10/24/2007 in Argentina and I've been playing Minecraft for as long as I can remember (since I was about 5 or 6 years old). 
+
+At 11, I started as a builder. If you're curious, on [this YouTube channel](https://www.youtube.com/@lachocolatada1884) you can find about 3 of the over 100 builds I managed to make back then.
+
+### From Builder to Developer (2021 - 2022)
+
+From the age of 14, building bored me and I started getting interested in programming. It all started because I was immature enough to grief the very server that had given me an opportunity (sorry davodamc, [tagelis](https://www.youtube.com/@tagelis), and kingscraft). That guilt made me want to learn Java; I started by decompiling Spigot plugins and trying to add more features to them on my own.
+
+It wasn't until **April 17, 2022** that I officially released my first plugin: [aPickup - Lightweight AutoPickup](https://www.spigotmc.org/resources/apickup-lightweight-autopickup.101449/).
+
+### The Go-Server Experiment
+
+For a few years, I dedicated myself to programming plugins until I hit a massive wall: *Minecraft is poorly optimized*. In my mind, the magic solution was to remake my own server from scratch in a faster language than Java to fix most of the problems. 
+
+That's how my first server built from scratch for Minecraft 1.8 was born: [Go-Server](https://github.com/MineLC/Go-Server). It even had a plugin system using `.so` files (you can see it in [this video](https://www.youtube.com/watch?v=6Yrv7VQX7Ow), where a "hello-world" plugin weighed 5MB because it had to bundle the entire API xD). I remember that after that video, people told me it was going to be useless since everyone was using much newer versions, so I decided to drop it and focus more on the general Minecraft server side of things. 
+
+That's when I realized two vital things:
+1. If you want performance, you **MUST** use NMS. The Spigot API is just a questionable wrapper, to the point where most plugins need their own framework to make up for its shortcomings.
+2. The community is adapted to Java/Kotlin. Making a plugin system in another language requires migrating them to things like Luau or using unix-sockets, losing a lot of performance and complicating everything in the process.
+
+### The First Attempt: Reactor V1
+
+Seeing those problems, I decided to make the first version of Reactor for Minecraft 1.21: [Reactor-V1-DEPRECATED](https://github.com/Reactor-Hytale/Reactor-V1-DEPRECATED) (Thanks to marcos and xism4 for supporting me with the commits). 
+
+Why did I do it if things like Minestom or Pumpkin already existed? I saw it clearly:
+*   **Minestom** is a library, not a server itself. When analyzing its code, I saw design flaws that I didn't like (e.g., not using Netty because it adds complexity; a trade-off that cost them dearly because the current protocol leaves a lot to be desired).
+*   **Pumpkin** and other servers reminded me of the lesson I had already learned with my Go-Server regarding language and community.
+
+I started coding Reactor-V1. I spent several weeks fighting with Minecraft's palettes and registries because I couldn't wrap my head around them xd. Once I got the server running, I realized the huge design mistakes I had made. If you analyze the code, you'll see that every feature was supposed to be a separate plugin, but these accessed the internal code directly. This meant that with every update, the entire plugin would break, plus I divided everything into libraries which made it super weird to look at.
+
+I simply dropped it. The software was poorly designed from the ground up, and right there I learned a fundamental lesson: *Once the foundation is set and people are using it, it's very complicated to change it, since it implies breaking everything done so far.*
+
+### Changing Perspectives: Spring Boot
+
+During the time I left Reactor-V1, I dedicated myself to programming servers, freelancing, and above all, **KEEPING on learning**. 
+
+I have to pause here for a huge shout-out: I want to deeply thank **[t3rry327](https://github.com/t3rry327/)** for trusting me and getting me into Spring Boot and the enterprise environment. He was the one who truly changed my mindset. Despite me having earned so little as a dev all these years, he was the only one who went as far as gifting me the PC I’m using right now. Without it, I wouldn't be able to code Reactor today without worrying about hardware limitations.
+
+I owe him a lot because I learned a mindset very different from the one I used in Spigot. I realized that from time to time it's necessary to step out of your comfort zone and be willing to accept that, maybe, what you thought was the best way to do something was simply because you were adapted to a poorly built ecosystem.
+
+### Hytale's Release and the SDK Patch
+
+It might sound a bit cocky, but I always trusted that Hytale was going to come out (even if people called it vaporware). The very day it dropped, the first thing I did was decompile the server (that's right, I broke the EULA, please don't sue me 😔).
+
+At first glance, I didn't think it was that bad, but I was dead wrong. I realized this when I tried to code a random-teleport plugin: I discovered that even the most basic feature, like a scheduler, wasn't even built. I said: "Well, I'll just make [my own SDK](https://github.com/Reactor-Hytale/SDK) to make development easier." 
+
+But what I didn't like was that I needed to make wrappers and find workarounds for a poorly made system. I saw it as a band-aid (very similar to what Bukkit did when Minecraft had no API). When it finally clicked for me, I just dropped it because it had no future. There wasn't (and still isn't) a real API; it's all code tightly coupled to the internals. I thought: "They probably rushed the game's launch and they'll fix it in a few months."
+
+### The 50-Page Document
+
+A few months went by where I was learning more about Spring, focusing on my last year of high school to become an electronics technician, and creating servers and plugins from time to time. 
+
+Until I got the itch to go back and see how much the Hytale server had improved. *Surprise, surprise*, it had barely changed at all. It had the same horrible way of creating plugins, the same config system, still no schedulers, an extremely verbose ECS, and a thousand other flaws.
+
+I contacted *machinebreaker* (a Discord acquaintance from years ago who I made a server with and who paid me for patches for uspigot) to see if I could send him patches or help fix it. He told me to write a quick document explaining the issues. 
+
+There I made another mistake: that document was neither quick nor short. I ended up making [a 50-page one questioning design decisions](https://drive.google.com/drive/u/2/folders/1lQ0WfjvvEmYHkqg6k6SCa8gtP4kTRC43?dmr=1&ec=wgc-drive-hero-goto) based on the little I had seen. I sent it to him about 4 days later and, to this day, machinebreaker hasn't sent me a message back. I don't blame him; if machine only dedicates himself to optimizing servers, I can't go to him with architecture or design problems. 
+
+Anyway, even if nobody read it, the document helped me realize that the format I used was pretty bad (I didn't even use a standard style like O'Reilly's).
+
+### The Birth of Reactor (January 2026 - May 2026)
+
+It's worth noting that I had started this in January of this year, but I thought it was too much, decided to make the SDK, dropped it, and came back to remake everything. I started making progress on what is today **Reactor**, enjoying the design process and thinking about how I would have liked to have an API when I was just starting to code in Spigot.
+
+As of today (**05/03/2026**), I find myself writing this without knowing if anyone is even going to read it, but I have one thing clear: **I cannot compete with hytale-server alone**, but I *can* teach about what a video game server for Minecraft/Hytale *should* be like. 
+
+I won't win in features, nor in performance, but I can win in *Developer Experience*. And I'm doing it because I want to. No project in these 4 years had any relevance, to the point that I only made about $300 USD in total as a developer. 
+
+When I have news, I will keep updating this document. I'm not doing it for the money. I want the community to stop being so complacent and to understand Hytale's problems. 
+
+This project is not a real alternative. **It is an architecture showcase. A reminder of what the Hytale server could have been.** Thank you.
